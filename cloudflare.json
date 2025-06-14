@@ -1,15 +1,11 @@
 {
-  "buildCommand": "pip install -r requirements.txt",
-  "outputDirectory": "public",
+  "buildCommand": "pip install -r requirements.txt && python app.py",
+  "outputDirectory": ".",
   "rootDirectory": ".",
   "routes": [
     {
-      "pattern": "/api/*",
-      "script": "app.py"
-    },
-    {
       "pattern": "/*",
-      "static": true
+      "script": "app.py"
     }
   ]
 } 

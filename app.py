@@ -3,7 +3,6 @@ from flask_cors import CORS
 import requests
 from datetime import datetime
 import os
-from cloudflare.worker import Worker
 
 app = Flask(__name__)
 CORS(app)
@@ -71,12 +70,6 @@ def index():
 def get_meteors():
     meteors = fetch_meteor_data()
     return jsonify(meteors)
-
-# Create a worker instance
-worker = Worker(app)
-
-# Export the worker for Cloudflare
-worker.serve()
 
 if __name__ == '__main__':
     # Use environment variable for port, default to 8080
