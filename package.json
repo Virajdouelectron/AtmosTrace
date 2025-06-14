@@ -1,0 +1,21 @@
+{
+  "name": "atmostrace",
+  "version": "1.0.0",
+  "description": "A real-time meteor tracking visualization platform that displays meteor entries and impact zones on an interactive 3D Earth.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Virajdouelectron/AtmosTrace.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Virajdouelectron/AtmosTrace/issues"
+  },
+  "homepage": "https://github.com/Virajdouelectron/AtmosTrace#readme",
+  "type": "commonjs"
+}
