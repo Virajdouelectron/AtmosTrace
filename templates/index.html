@@ -29,35 +29,73 @@
             border-radius: 4px;
             font-weight: bold;
         }
+        .error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.1);
+            color: #ff4444;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white">
     <div class="globe-container">
         <div id="globeViz"></div>
-        <div class="loading-spinner">
+        <div id="loadingSpinner" class="loading-spinner">
             <div class="spinner"></div>
+            <div class="mt-4 text-center">Loading meteor data...</div>
         </div>
+        <div id="errorMessage" class="error-message hidden"></div>
         <div id="tooltip" class="tooltip hidden"></div>
     </div>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 
     <script>
-        // Initialize Globe
-        const globe = Globe()
-            .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
-            .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
-            .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
-            .width(window.innerWidth)
-            .height(window.innerHeight)
-            .atmosphereColor('#ffffff')
-            .atmosphereAltitude(0.1)
-            (document.getElementById('globeViz'));
+        // Show loading spinner
+        function showLoading() {
+            document.getElementById('loadingSpinner').classList.remove('hidden');
+            document.getElementById('errorMessage').classList.add('hidden');
+        }
 
-        // Handle window resize
-        window.addEventListener('resize', () => {
-            globe.width(window.innerWidth)
-                .height(window.innerHeight);
-        });
+        // Hide loading spinner
+        function hideLoading() {
+            document.getElementById('loadingSpinner').classList.add('hidden');
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.classList.remove('hidden');
+            hideLoading();
+        }
+
+        // Initialize Globe
+        let globe;
+        try {
+            globe = Globe()
+                .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+                .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+                .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
+                .width(window.innerWidth)
+                .height(window.innerHeight)
+                .atmosphereColor('#ffffff')
+                .atmosphereAltitude(0.1)
+                (document.getElementById('globeViz'));
+
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                globe.width(window.innerWidth)
+                    .height(window.innerHeight);
+            });
+        } catch (error) {
+            showError('Failed to initialize 3D globe. Please refresh the page.');
+            console.error('Globe initialization error:', error);
+        }
 
         // Tooltip handling
         const tooltip = document.getElementById('tooltip');
@@ -103,10 +141,19 @@
 
         // Fetch and update meteor data
         async function fetchMeteors() {
+            showLoading();
             try {
                 const response = await fetch('/api/meteors');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const meteors = await response.json();
                 
+                if (!meteors || meteors.length === 0) {
+                    showError('No meteor data available at the moment. Please try again later.');
+                    return;
+                }
+
                 // Clear existing points and arcs
                 globe.pointsData([]).arcsData([]);
                 
@@ -144,8 +191,11 @@
                 // Add hover effects
                 globe.onPointHover(showTooltip)
                     .onPointUnhover(hideTooltip);
+
+                hideLoading();
             } catch (error) {
                 console.error('Error fetching meteor data:', error);
+                showError('Failed to load meteor data. Please refresh the page.');
             }
         }
 
