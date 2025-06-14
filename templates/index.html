@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeteorGlobe - Real-time Meteor Tracking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/globe.gl@2.32.1/dist/globe.gl.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body { margin: 0; }
+        #globeViz { width: 100vw; height: 100vh; }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 1000;
+            min-width: 200px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .warning-badge {
+            background: #ff4444;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="globe-container">
+        <div id="globeViz"></div>
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+        </div>
+        <div id="tooltip" class="tooltip hidden"></div>
+    </div>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+    <script>
+        // Initialize Globe
+        const globe = Globe()
+            .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+            .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+            .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
+            .width(window.innerWidth)
+            .height(window.innerHeight)
+            .atmosphereColor('#ffffff')
+            .atmosphereAltitude(0.1)
+            (document.getElementById('globeViz'));
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            globe.width(window.innerWidth)
+                .height(window.innerHeight);
+        });
+
+        // Tooltip handling
+        const tooltip = document.getElementById('tooltip');
+        
+        function showTooltip(event, meteor) {
+            const { clientX, clientY } = event;
+            tooltip.style.left = `${clientX + 10}px`;
+            tooltip.style.top = `${clientY + 10}px`;
+            
+            const warningHtml = meteor.warning ? 
+                `<div class="warning-badge mb-2">${meteor.warning}</div>` : '';
+            
+            tooltip.innerHTML = `
+                <div class="space-y-2">
+                    ${warningHtml}
+                    <div class="font-bold">${meteor.type}</div>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                        <div>Magnitude:</div>
+                        <div>${meteor.magnitude}</div>
+                        <div>Energy:</div>
+                        <div>${meteor.energy} kt</div>
+                        <div>Impact Energy:</div>
+                        <div>${meteor.impact_energy} kt</div>
+                        <div>Velocity:</div>
+                        <div>${meteor.velocity} km/s</div>
+                        <div>Altitude:</div>
+                        <div>${meteor.altitude} km</div>
+                        <div>Time (UTC):</div>
+                        <div>${meteor.utc_time}</div>
+                    </div>
+                    <a href="${meteor.mapLink}" target="_blank" 
+                       class="block mt-2 text-center text-blue-400 hover:text-blue-300 bg-blue-900/50 p-1 rounded">
+                        View on Map
+                    </a>
+                </div>
+            `;
+            tooltip.classList.remove('hidden');
+        }
+
+        function hideTooltip() {
+            tooltip.classList.add('hidden');
+        }
+
+        // Fetch and update meteor data
+        async function fetchMeteors() {
+            try {
+                const response = await fetch('/api/meteors');
+                const meteors = await response.json();
+                
+                // Clear existing points and arcs
+                globe.pointsData([]).arcsData([]);
+                
+                // Add new points and arcs
+                const points = meteors.map(meteor => ({
+                    ...meteor,
+                    color: meteor.magnitude >= 6 ? '#ff0000' : 
+                           meteor.magnitude >= 5 ? '#ff4444' : '#ffa500',
+                    radius: meteor.magnitude >= 6 ? 0.5 : 0.3,
+                    label: meteor.warning ? '🚨' : '☄️'
+                }));
+
+                const arcs = meteors.map(meteor => ({
+                    startLat: meteor.entryLat,
+                    startLng: meteor.entryLng,
+                    endLat: meteor.lat,
+                    endLng: meteor.lng,
+                    color: meteor.magnitude >= 6 ? '#ff0000' : 
+                           meteor.magnitude >= 5 ? '#ff4444' : '#ffa500'
+                }));
+
+                globe.pointsData(points)
+                    .arcsData(arcs)
+                    .pointAltitude(0.1)
+                    .pointColor('color')
+                    .pointRadius('radius')
+                    .pointLabel('label')
+                    .arcColor('color')
+                    .arcAltitude(0.3)
+                    .arcStroke(0.5)
+                    .arcDashLength(0.4)
+                    .arcDashGap(0.2)
+                    .arcDashAnimateTime(2000);
+
+                // Add hover effects
+                globe.onPointHover(showTooltip)
+                    .onPointUnhover(hideTooltip);
+            } catch (error) {
+                console.error('Error fetching meteor data:', error);
+            }
+        }
+
+        // Initial fetch and periodic updates
+        fetchMeteors();
+        setInterval(fetchMeteors, 60000); // Update every minute
+    </script>
+</body>
+</html> 
