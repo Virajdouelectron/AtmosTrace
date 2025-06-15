@@ -45,6 +45,25 @@
 </head>
 <body class="bg-gray-900 text-white">
     <div class="globe-container">
+        <div class="time-range-selector">
+            <select id="timeRange" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500">
+                <option value="realtime">Real-time</option>
+                <option value="1h">Last 1 Hour</option>
+                <option value="10h">Last 10 Hours</option>
+                <option value="10d">Last 10 Days</option>
+                <option value="5m">Last 5 Months</option>
+                <option value="custom">Custom Date Range</option>
+            </select>
+            <div id="customDateRange" class="hidden mt-2 space-y-2">
+                <div class="flex space-x-2">
+                    <input type="date" id="startDate" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500">
+                    <input type="date" id="endDate" class="bg-gray-800 text-white px-4 py-2 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500">
+                </div>
+                <button id="applyCustomRange" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    Apply Date Range
+                </button>
+            </div>
+        </div>
         <div id="globeViz"></div>
         <div id="loadingSpinner" class="loading-spinner">
             <div class="spinner"></div>
@@ -52,6 +71,28 @@
         </div>
         <div id="errorMessage" class="error-message hidden"></div>
         <div id="tooltip" class="tooltip hidden"></div>
+    </div>
+
+    <!-- Media Gallery Modal -->
+    <div id="mediaModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="text-xl font-bold">Meteor Media Gallery</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tabs">
+                    <button class="tab-button active" data-tab="images">Images</button>
+                    <button class="tab-button" data-tab="videos">Videos</button>
+                </div>
+                <div id="imagesTab" class="tab-content active">
+                    <div class="image-gallery"></div>
+                </div>
+                <div id="videosTab" class="tab-content">
+                    <div class="video-gallery"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
