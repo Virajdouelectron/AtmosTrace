@@ -226,15 +226,20 @@ def index():
 @async_route
 async def get_meteors():
     try:
+        # Get query parameters
         time_range = request.args.get('time_range', 'realtime')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
+        print(f"\n=== Received request with time_range: {time_range}, start_date: {start_date}, end_date: {end_date} ===")
+        
+        # Set date range based on time_range parameter
+        end = datetime.utcnow()
         if time_range == 'custom' and start_date and end_date:
+            print("Using custom date range")
             start = start_date
             end = end_date
         else:
-            end = datetime.utcnow()
             if time_range == '1h':
                 start = end - timedelta(hours=1)
             elif time_range == '10h':
@@ -249,11 +254,29 @@ async def get_meteors():
             start = start.strftime('%Y-%m-%d')
             end = end.strftime('%Y-%m-%d')
         
+        print(f"Fetching meteor data from {start} to {end}")
+        
+        # Fetch meteor data
         meteors = await fetch_all_meteor_data(start, end)
+        
+        # Fetch media data for each meteor
+        print("Fetching media data for meteors...")
+        for meteor in meteors:
+            try:
+                meteor['media'] = await fetch_meteor_media(meteor)
+            except Exception as e:
+                print(f"Error fetching media for meteor {meteor.get('id', 'unknown')}: {str(e)}")
+                meteor['media'] = {'images': [], 'videos': []}
+        
+        print(f"Returning {len(meteors)} meteor records")
         return jsonify(meteors)
+        
     except Exception as e:
-        print(f"Error in /api/meteors: {str(e)}")
-        return jsonify({"error": "Failed to fetch meteor data. Please try again later."}), 500
+        error_msg = f"Error in /api/meteors: {str(e)}"
+        print(error_msg)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": error_msg}), 500
 
 @app.route('/static/<path:path>')
 def serve_static(path):
