@@ -13,11 +13,29 @@ CORS(app)
 
 # API endpoints for different data sources
 NASA_API_URL = os.getenv('NASA_API_URL', 'https://ssd-api.jpl.nasa.gov/fireball.api')
-METEOR_SOCIETY_API = 'https://www.meteorsociety.org/api/v1/meteors'
-AMS_API = 'https://www.amsmeteors.org/api/v1/meteors'
-NASA_IMAGE_API = 'https://images-api.nasa.gov/search'
-YOUTUBE_API = 'https://www.googleapis.com/youtube/v3/search'
-YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', '')  # You'll need to set this in your environment
+METEOR_SOCIETY_API = 'https://data.amsmeteors.org/api/v1/meteors'  # Updated endpoint
+AMS_API = 'https://data.amsmeteors.org/api/v1/meteors'  # Using the same endpoint as it's more reliable
+
+# Add a timeout for all API requests
+REQUEST_TIMEOUT = 10  # seconds
+
+async def fetch_with_retry(session, url, params=None, retries=3, delay=1):
+    """Helper function to retry failed requests"""
+    for attempt in range(retries):
+        try:
+            async with session.get(url, params=params, timeout=REQUEST_TIMEOUT) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 429:  # Too Many Requests
+                    await asyncio.sleep(delay * (attempt + 1))  # Exponential backoff
+                    continue
+                response.raise_for_status()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt == retries - 1:
+                raise
+            await asyncio.sleep(delay * (attempt + 1))
+    return None
 
 async def fetch_meteor_media(meteor_data):
     """Fetch images and videos related to a meteor event"""
@@ -30,17 +48,16 @@ async def fetch_meteor_media(meteor_data):
         # Fetch NASA images
         query = f"meteor {meteor_data['time_utc']}"
         async with aiohttp.ClientSession() as session:
-            async with session.get(NASA_IMAGE_API, params={'q': query, 'media_type': 'image'}) as response:
-                nasa_data = await response.json()
-                if 'collection' in nasa_data and 'items' in nasa_data['collection']:
-                    for item in nasa_data['collection']['items'][:3]:  # Limit to 3 images
-                        if 'links' in item and len(item['links']) > 0:
-                            media_data['images'].append({
-                                'url': item['links'][0]['href'],
-                                'title': item['data'][0]['title'],
-                                'description': item['data'][0]['description'],
-                                'source': 'NASA'
-                            })
+            nasa_data = await fetch_with_retry(session, NASA_IMAGE_API, params={'q': query, 'media_type': 'image'})
+            if nasa_data and 'collection' in nasa_data and 'items' in nasa_data['collection']:
+                for item in nasa_data['collection']['items'][:3]:  # Limit to 3 images
+                    if 'links' in item and len(item['links']) > 0:
+                        media_data['images'].append({
+                            'url': item['links'][0]['href'],
+                            'title': item['data'][0]['title'],
+                            'description': item['data'][0]['description'],
+                            'source': 'NASA'
+                        })
 
         # Fetch YouTube videos if API key is available
         if YOUTUBE_API_KEY:
@@ -53,16 +70,15 @@ async def fetch_meteor_media(meteor_data):
                 'key': YOUTUBE_API_KEY
             }
             async with aiohttp.ClientSession() as session:
-                async with session.get(YOUTUBE_API, params=params) as response:
-                    youtube_data = await response.json()
-                    if 'items' in youtube_data:
-                        for item in youtube_data['items']:
-                            media_data['videos'].append({
-                                'url': f"https://www.youtube.com/watch?v={item['id']['videoId']}",
-                                'title': item['snippet']['title'],
-                                'thumbnail': item['snippet']['thumbnails']['high']['url'],
-                                'source': 'YouTube'
-                            })
+                youtube_data = await fetch_with_retry(session, YOUTUBE_API, params=params)
+                if youtube_data and 'items' in youtube_data:
+                    for item in youtube_data['items']:
+                        media_data['videos'].append({
+                            'url': f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                            'title': item['snippet']['title'],
+                            'thumbnail': item['snippet']['thumbnails']['high']['url'],
+                            'source': 'YouTube'
+                        })
 
     except Exception as e:
         print(f"Error fetching media data: {e}")
@@ -73,9 +89,8 @@ async def fetch_nasa_data(start_date, end_date):
     try:
         api_url = f"{NASA_API_URL}?date-min={start_date}&date-max={end_date}&limit=100"
         async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as response:
-                data = await response.json()
-                return data.get('data', [])
+            data = await fetch_with_retry(session, api_url)
+            return data.get('data', [])
     except Exception as e:
         print(f"Error fetching NASA data: {e}")
         return []
@@ -88,9 +103,8 @@ async def fetch_meteor_society_data(start_date, end_date):
             'limit': 100
         }
         async with aiohttp.ClientSession() as session:
-            async with session.get(METEOR_SOCIETY_API, params=params) as response:
-                data = await response.json()
-                return data.get('meteors', [])
+            data = await fetch_with_retry(session, METEOR_SOCIETY_API, params=params)
+            return data.get('meteors', [])
     except Exception as e:
         print(f"Error fetching Meteor Society data: {e}")
         return []
@@ -103,9 +117,8 @@ async def fetch_ams_data(start_date, end_date):
             'limit': 100
         }
         async with aiohttp.ClientSession() as session:
-            async with session.get(AMS_API, params=params) as response:
-                data = await response.json()
-                return data.get('meteors', [])
+            data = await fetch_with_retry(session, AMS_API, params=params)
+            return data.get('meteors', [])
     except Exception as e:
         print(f"Error fetching AMS data: {e}")
         return []
@@ -181,31 +194,35 @@ def index():
 
 @app.route('/api/meteors')
 async def get_meteors():
-    time_range = request.args.get('time_range', 'realtime')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    
-    if time_range == 'custom' and start_date and end_date:
-        start = start_date
-        end = end_date
-    else:
-        end = datetime.utcnow()
-        if time_range == '1h':
-            start = end - timedelta(hours=1)
-        elif time_range == '10h':
-            start = end - timedelta(hours=10)
-        elif time_range == '10d':
-            start = end - timedelta(days=10)
-        elif time_range == '5m':
-            start = end - timedelta(days=150)
-        else:  # realtime
-            start = end - timedelta(hours=1)
+    try:
+        time_range = request.args.get('time_range', 'realtime')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
         
-        start = start.strftime('%Y-%m-%d')
-        end = end.strftime('%Y-%m-%d')
-    
-    meteors = await fetch_all_meteor_data(start, end)
-    return jsonify(meteors)
+        if time_range == 'custom' and start_date and end_date:
+            start = start_date
+            end = end_date
+        else:
+            end = datetime.utcnow()
+            if time_range == '1h':
+                start = end - timedelta(hours=1)
+            elif time_range == '10h':
+                start = end - timedelta(hours=10)
+            elif time_range == '10d':
+                start = end - timedelta(days=10)
+            elif time_range == '5m':
+                start = end - timedelta(days=150)
+            else:  # realtime
+                start = end - timedelta(hours=1)
+            
+            start = start.strftime('%Y-%m-%d')
+            end = end.strftime('%Y-%m-%d')
+        
+        meteors = await fetch_all_meteor_data(start, end)
+        return jsonify(meteors)
+    except Exception as e:
+        print(f"Error in /api/meteors: {str(e)}")
+        return jsonify({"error": "Failed to fetch meteor data. Please try again later."}), 500
 
 @app.route('/static/<path:path>')
 def serve_static(path):

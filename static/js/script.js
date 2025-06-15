@@ -110,25 +110,83 @@ function calculateEntryPoint(lat, lng) {
     };
 }
 
-// Initialize date inputs with default values
+// Initialize date inputs with default values and set max date to today
 function initializeDateInputs() {
     const today = new Date();
     const oneMonthAgo = new Date();
     oneMonthAgo.setMonth(today.getMonth() - 1);
     
-    document.getElementById('startDate').value = oneMonthAgo.toISOString().split('T')[0];
-    document.getElementById('endDate').value = today.toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+    const oneMonthAgoStr = oneMonthAgo.toISOString().split('T')[0];
+    
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    
+    // Set max date to today
+    startDateInput.max = todayStr;
+    endDateInput.max = todayStr;
+    
+    // Set default values
+    startDateInput.value = oneMonthAgoStr;
+    endDateInput.value = todayStr;
+    
+    // Add event listeners for date validation
+    startDateInput.addEventListener('change', validateDateRange);
+    endDateInput.addEventListener('change', validateDateRange);
 }
 
-// Show/hide custom date range inputs
+// Validate that start date is before end date
+function validateDateRange() {
+    const startDate = new Date(document.getElementById('startDate').value);
+    const endDate = new Date(document.getElementById('endDate').value);
+    
+    if (startDate > endDate) {
+        // If start date is after end date, set end date to start date
+        document.getElementById('endDate').value = document.getElementById('startDate').value;
+    }
+}
+
+// Show/hide custom date range inputs and validate dates
 function toggleCustomDateRange() {
     const customDateRange = document.getElementById('customDateRange');
     const timeRange = document.getElementById('timeRange').value;
     
     if (timeRange === 'custom') {
         customDateRange.classList.remove('hidden');
+        // Re-validate dates when showing the custom range
+        validateDateRange();
     } else {
         customDateRange.classList.add('hidden');
+    }
+}
+
+// Show error message to user
+function showError(message) {
+    const errorDiv = document.getElementById('error-message');
+    if (!errorDiv) {
+        const container = document.createElement('div');
+        container.id = 'error-message';
+        container.className = 'fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded';
+        container.role = 'alert';
+        container.innerHTML = `
+            <strong class="font-bold">Error!</strong>
+            <span class="block sm:inline">${message}</span>
+            <span class="absolute top-0 bottom-0 right-0 px-4 py-3" onclick="this.parentElement.remove()">
+                <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <title>Close</title>
+                    <path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/>
+                </svg>
+            </span>
+        `;
+        document.body.appendChild(container);
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            if (container.parentNode) {
+                container.remove();
+            }
+        }, 5000);
+    } else {
+        errorDiv.querySelector('span.block').textContent = message;
     }
 }
 
@@ -142,17 +200,31 @@ async function fetchMeteors() {
         if (timeRange === 'custom') {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
+            
+            if (!startDate || !endDate) {
+                throw new Error('Please select both start and end dates');
+            }
+            
             url += `&start_date=${startDate}&end_date=${endDate}`;
         }
         
         const response = await fetch(url);
-        const meteors = await response.json();
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to fetch meteor data');
+        }
         
         // Clear existing points and arcs
         globe.pointsData([]).arcsData([]);
         
+        if (!data || data.length === 0) {
+            showError('No meteor data found for the selected date range.');
+            return;
+        }
+        
         // Add new points and arcs
-        const points = meteors.map(meteor => {
+        const points = data.map(meteor => {
             const entryPoint = calculateEntryPoint(meteor.lat, meteor.lng);
             return {
                 ...meteor,
@@ -188,8 +260,10 @@ async function fetchMeteors() {
         // Add hover effects
         globe.onPointHover(showTooltip)
             .onPointUnhover(hideTooltip);
+            
     } catch (error) {
         console.error('Error fetching meteor data:', error);
+        showError(error.message || 'Failed to load meteor data. Please try again.');
     } finally {
         hideSpinner();
     }
