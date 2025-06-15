@@ -18,7 +18,7 @@ METEOR_SOCIETY_API = 'https://data.amsmeteors.org/api/v1/meteors'
 AMS_API = 'https://data.amsmeteors.org/api/v1/meteors'
 NASA_IMAGE_API = 'https://images-api.nasa.gov/search'
 YOUTUBE_API = 'https://www.googleapis.com/youtube/v3/search'
-YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', '')
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'AIzaSyB2Io9clw4XQjqjLH29kGt0B2SpPctVy90')
 
 # Add a timeout for all API requests
 REQUEST_TIMEOUT = 10  # seconds
