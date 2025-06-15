@@ -4,6 +4,7 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 gunicorn>=21.2.0
 Pillow>=10.0.0  # For image processing
+aiohttp>=3.9.0  # Added aiohttp with a version compatible with Python 3.13
 # Temporarily removing problematic packages
 # python-magic dependencies can be added later if needed
 # Using more recent versions that support Python 3.13
