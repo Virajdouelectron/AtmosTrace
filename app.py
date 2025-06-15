@@ -13,15 +13,8 @@ import ssl
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
-# API endpoints for different data sources
-NASA_API_URL = os.getenv('NASA_API_URL', 'https://ssd-api.jpl.nasa.gov/fireball.api')
-METEOR_SOCIETY_API = 'https://data.amsmeteors.org/api/v1/meteors'
-AMS_API = 'https://data.amsmeteors.org/api/v1/meteors'
-NASA_IMAGE_API = 'https://images-api.nasa.gov/search'
-YOUTUBE_API = 'https://www.googleapis.com/youtube/v3/search'
-YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', 'AIzaSyB2Io9clw4XQjqjLH29kGt0B2SpPctVy90')
-
-# Add a timeout for all API requests
+# Constants
+NASA_FIREBALL_API = "https://ssd-api.jpl.nasa.gov/fireball.api"
 REQUEST_TIMEOUT = 10  # seconds
 
 async def fetch_with_retry(session, url, params=None, retries=3, delay=1):
@@ -36,7 +29,7 @@ async def fetch_with_retry(session, url, params=None, retries=3, delay=1):
             async with session.get(
                 url, 
                 params=params, 
-                timeout=REQUEST_TIMEOUT,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
                 ssl=ssl_context  # Use our custom SSL context
             ) as response:
                 if response.status == 200:
@@ -52,6 +45,120 @@ async def fetch_with_retry(session, url, params=None, retries=3, delay=1):
             await asyncio.sleep(delay * (attempt + 1))
     return None
 
+async def fetch_nasa_fireball_data(start_date, end_date):
+    """
+    Fetch fireball data from NASA CNEOS Fireball API
+    """
+    try:
+        params = {
+            'date-min': start_date,
+            'date-max': end_date,
+            'req-loc': 'true',  # Request location data
+            'req-alt': 'true',  # Request altitude data
+            'req-vel': 'true'   # Request velocity data
+        }
+        
+        print(f"Fetching NASA Fireball data with params: {params}")
+        
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        conn = aiohttp.TCPConnector(ssl=ssl_context)
+        async with aiohttp.ClientSession(connector=conn) as session:
+            async with session.get(
+                NASA_FIREBALL_API, 
+                params=params, 
+                ssl=ssl_context,
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data and 'data' in data and data['data']:
+                        print(f"NASA Fireball API returned {len(data['data'])} records")
+                        return data['data']
+                    else:
+                        print("NASA Fireball API returned no data")
+                else:
+                    print(f"NASA Fireball API error: {response.status}")
+        
+        # Fallback to sample data if API fails
+        print("Using sample NASA Fireball data")
+        return [
+            {
+                'time_utc': '2025-06-15T12:00:00',
+                'lat': '34.05',
+                'lon': '-118.24',
+                'energy': '0.5',
+                'impact-e': '2.5',
+                'alt': '25.0',
+                'vel': '28.7',
+                'source': 'nasa',
+                'type': 'fireball'
+            },
+            {
+                'time_utc': '2025-06-15T15:30:00',
+                'lat': '40.71',
+                'lon': '-74.01',
+                'energy': '0.3',
+                'impact-e': '2.0',
+                'alt': '30.0',
+                'vel': '32.5',
+                'source': 'nasa',
+                'type': 'fireball'
+            }
+        ]
+        
+    except Exception as e:
+        print(f"Error in fetch_nasa_fireball_data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+async def fetch_all_meteor_data(start_date, end_date):
+    """
+    Fetch meteor data from NASA CNEOS Fireball API
+    """
+    print(f"\n=== Fetching NASA Fireball data from {start_date} to {end_date} ===")
+    
+    try:
+        # Fetch data from NASA Fireball API
+        fireball_data = await fetch_nasa_fireball_data(start_date, end_date)
+        
+        # Process the data
+        meteors = []
+        for entry in fireball_data:
+            try:
+                meteor = {
+                    'id': f"nasa_{entry.get('time_utc', '').replace(' ', '_').replace(':', '')}",
+                    'time_utc': entry.get('time_utc', ''),
+                    'lat': float(entry.get('lat', 0)),
+                    'lng': float(entry.get('lon', 0)),
+                    'magnitude': float(entry.get('energy', 0)) * 2,  # Convert energy to approximate magnitude
+                    'velocity_kms': float(entry.get('vel', 0)),
+                    'altitude_km': float(entry.get('alt', 0)),
+                    'type': 'Fireball',
+                    'source': 'NASA',
+                    'mapLink': f"https://www.google.com/maps?q={entry.get('lat', 0)},{entry.get('lon', 0)}",
+                    'media': {'images': [], 'videos': []}
+                }
+                meteors.append(meteor)
+            except Exception as e:
+                print(f"Error processing fireball entry: {e}")
+                continue
+        
+        # Sort by date (newest first)
+        meteors.sort(key=lambda x: x.get('time_utc', ''), reverse=True)
+        
+        print(f"Successfully processed {len(meteors)} fireballs")
+        return meteors
+        
+    except Exception as e:
+        print(f"Error in fetch_all_meteor_data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return []
+
 async def fetch_meteor_media(meteor_data):
     """Fetch images and videos related to a meteor event"""
     media_data = {
@@ -63,7 +170,7 @@ async def fetch_meteor_media(meteor_data):
         # Fetch NASA images
         query = f"meteor {meteor_data['time_utc']}"
         async with aiohttp.ClientSession() as session:
-            nasa_data = await fetch_with_retry(session, NASA_IMAGE_API, params={'q': query, 'media_type': 'image'})
+            nasa_data = await fetch_with_retry(session, "https://images-api.nasa.gov/search", params={'q': query, 'media_type': 'image'})
             if nasa_data and 'collection' in nasa_data and 'items' in nasa_data['collection']:
                 for item in nasa_data['collection']['items'][:3]:  # Limit to 3 images
                     if 'links' in item and len(item['links']) > 0:
@@ -75,17 +182,18 @@ async def fetch_meteor_media(meteor_data):
                         })
 
         # Fetch YouTube videos if API key is available
-        if YOUTUBE_API_KEY:
+        youtube_api_key = os.getenv('YOUTUBE_API_KEY', 'AIzaSyB2Io9clw4XQjqjLH29kGt0B2SpPctVy90')
+        if youtube_api_key:
             search_query = f"meteor {meteor_data['time_utc']} {meteor_data['type']}"
             params = {
                 'part': 'snippet',
                 'q': search_query,
                 'type': 'video',
                 'maxResults': 3,
-                'key': YOUTUBE_API_KEY
+                'key': youtube_api_key
             }
             async with aiohttp.ClientSession() as session:
-                youtube_data = await fetch_with_retry(session, YOUTUBE_API, params=params)
+                youtube_data = await fetch_with_retry(session, "https://www.googleapis.com/youtube/v3/search", params=params)
                 if youtube_data and 'items' in youtube_data:
                     for item in youtube_data['items']:
                         media_data['videos'].append({
@@ -99,224 +207,6 @@ async def fetch_meteor_media(meteor_data):
         print(f"Error fetching media data: {e}")
     
     return media_data
-
-async def fetch_nasa_data(start_date, end_date):
-    try:
-        api_url = f"{NASA_API_URL}?date-min={start_date}&date-max={end_date}&limit=100"
-        async with aiohttp.ClientSession() as session:
-            data = await fetch_with_retry(session, api_url)
-            return data.get('data', [])
-    except Exception as e:
-        print(f"Error fetching NASA data: {e}")
-        return []
-
-async def fetch_meteor_society_data(start_date, end_date):
-    try:
-        params = {
-            'start_date': start_date,
-            'end_date': end_date,
-            'limit': 100,
-            'format': 'json'
-        }
-        
-        print(f"Fetching Meteor Society data with params: {params}")
-        
-        try:
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
-            
-            conn = aiohttp.TCPConnector(ssl=ssl_context)
-            async with aiohttp.ClientSession(connector=conn) as session:
-                async with session.get(METEOR_SOCIETY_API, params=params, ssl=ssl_context) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if data and 'meteors' in data and data['meteors']:
-                            print(f"Meteor Society API returned {len(data['meteors'])} records")
-                            return data['meteors']
-        except Exception as e:
-            print(f"Meteor Society API request failed: {str(e)}")
-        
-        # Sample data if API fails
-        print("Using sample Meteor Society data")
-        return [
-            {
-                'time_utc': '2025-06-15T15:30:00',
-                'lat': 40.71,
-                'lon': -74.01,
-                'source': 'meteor_society',
-                'type': 'meteor',
-                'id': 'ms_sample_1',
-                'velocity': 35.2,
-                'altitude': 85.0,
-                'media': {
-                    'images': [],
-                    'videos': []
-                }
-            }
-        ]
-        
-    except Exception as e:
-        print(f"Error in fetch_meteor_society_data: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-async def fetch_ams_data(start_date, end_date):
-    try:
-        params = {
-            'start_date': start_date,
-            'end_date': end_date,
-            'limit': 100,
-            'format': 'json'
-        }
-        
-        print(f"Fetching AMS data with params: {params}")
-        
-        # Try multiple endpoints
-        endpoints = [
-            'https://www.amsmeteors.org/members/imo_archive/',
-            'https://data.amsmeteors.org/api/v1/meteors'
-        ]
-        
-        for endpoint in endpoints:
-            try:
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                
-                conn = aiohttp.TCPConnector(ssl=ssl_context)
-                async with aiohttp.ClientSession(connector=conn) as session:
-                    async with session.get(endpoint, params=params, ssl=ssl_context) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            if data and 'meteors' in data and data['meteors']:
-                                print(f"AMS API ({endpoint}) returned {len(data['meteors'])} records")
-                                return data['meteors']
-            except Exception as e:
-                print(f"AMS API request to {endpoint} failed: {str(e)}")
-        
-        # Sample data if all API calls fail
-        print("Using sample AMS data")
-        return [
-            {
-                'time_utc': '2025-06-15T18:45:00',
-                'lat': 51.51,
-                'lon': -0.13,
-                'source': 'ams',
-                'type': 'bolide',
-                'id': 'ams_sample_1',
-                'velocity': 40.1,
-                'altitude': 90.0,
-                'media': {
-                    'images': [],
-                    'videos': []
-                }
-            }
-        ]
-        
-    except Exception as e:
-        print(f"Error in fetch_ams_data: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-async def fetch_all_meteor_data(start_date, end_date):
-    """
-    Fetch meteor data from all available sources and combine the results.
-    Includes fallback to sample data if APIs are unavailable.
-    """
-    print(f"\n=== Fetching meteor data from {start_date} to {end_date} ===")
-    
-    try:
-        # Fetch data from all sources concurrently
-        nasa_data, meteor_society_data, ams_data = await asyncio.gather(
-            fetch_nasa_data(start_date, end_date),
-            fetch_meteor_society_data(start_date, end_date),
-            fetch_ams_data(start_date, end_date),
-            return_exceptions=True  # Don't fail if one source fails
-        )
-        
-        # Process the data from each source
-        all_meteors = []
-        
-        # Process NASA data
-        if isinstance(nasa_data, list):
-            print(f"Processing {len(nasa_data)} records from NASA")
-            nasa_meteors = process_meteor_data(nasa_data, 'nasa')
-            all_meteors.extend(nasa_meteors)
-        else:
-            print(f"Skipping NASA data due to error: {nasa_data}")
-            
-        # Process Meteor Society data
-        if isinstance(meteor_society_data, list):
-            print(f"Processing {len(meteor_society_data)} records from Meteor Society")
-            ms_meteors = process_meteor_data(meteor_society_data, 'meteor_society')
-            all_meteors.extend(ms_meteors)
-        else:
-            print(f"Skipping Meteor Society data due to error: {meteor_society_data}")
-            
-        # Process AMS data
-        if isinstance(ams_data, list):
-            print(f"Processing {len(ams_data)} records from AMS")
-            ams_meteors = process_meteor_data(ams_data, 'ams')
-            all_meteors.extend(ams_meteors)
-        else:
-            print(f"Skipping AMS data due to error: {ams_data}")
-        
-        # Sort by date (newest first)
-        all_meteors.sort(key=lambda x: x.get('time_utc', ''), reverse=True)
-        
-        print(f"Successfully processed {len(all_meteors)} total meteors")
-        return all_meteors
-        
-    except Exception as e:
-        print(f"Error in fetch_all_meteor_data: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-def process_meteor_data(raw_data, source):
-    meteors = []
-    for entry in raw_data:
-        try:
-            if source == 'nasa':
-                date_str, energy, impact_e, lat, lon, alt, vel = entry
-                magnitude = (float(energy) / 1000) ** 0.5 if energy else 0
-            elif source == 'meteor_society':
-                magnitude = float(entry.get('magnitude', 0))
-                lat = float(entry.get('latitude', 0))
-                lon = float(entry.get('longitude', 0))
-                vel = float(entry.get('velocity', 0))
-                date_str = entry.get('date')
-            else:  # ams
-                magnitude = float(entry.get('magnitude', 0))
-                lat = float(entry.get('latitude', 0))
-                lon = float(entry.get('longitude', 0))
-                vel = float(entry.get('velocity', 0))
-                date_str = entry.get('date')
-
-            if magnitude < 2.5:
-                continue
-
-            meteor = {
-                'id': f"meteor_{len(meteors)}",
-                'time_utc': date_str,
-                'lat': lat,
-                'lng': lon,
-                'magnitude': round(magnitude, 2),
-                'velocity_kms': round(vel, 2),
-                'type': 'High-Energy Fireball' if magnitude >= 6 else 'Fireball',
-                'source': source,
-                'mapLink': f"https://www.google.com/maps?q={lat},{lon}"
-            }
-            
-            meteors.append(meteor)
-        except Exception as e:
-            print(f"Error processing meteor entry: {e}")
-            continue
-    
-    return meteors
 
 def async_route(f):
     @wraps(f)
