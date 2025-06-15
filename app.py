@@ -8,6 +8,7 @@ import aiohttp
 import asyncio
 import re
 from functools import wraps
+import ssl
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
@@ -25,9 +26,19 @@ REQUEST_TIMEOUT = 10  # seconds
 
 async def fetch_with_retry(session, url, params=None, retries=3, delay=1):
     """Helper function to retry failed requests"""
+    # Create an SSL context that doesn't verify certificates
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
     for attempt in range(retries):
         try:
-            async with session.get(url, params=params, timeout=REQUEST_TIMEOUT) as response:
+            async with session.get(
+                url, 
+                params=params, 
+                timeout=REQUEST_TIMEOUT,
+                ssl=ssl_context  # Use our custom SSL context
+            ) as response:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 429:  # Too Many Requests
