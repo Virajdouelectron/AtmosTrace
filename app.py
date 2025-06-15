@@ -7,14 +7,18 @@ import json
 import aiohttp
 import asyncio
 import re
+from functools import wraps
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
 # API endpoints for different data sources
 NASA_API_URL = os.getenv('NASA_API_URL', 'https://ssd-api.jpl.nasa.gov/fireball.api')
-METEOR_SOCIETY_API = 'https://data.amsmeteors.org/api/v1/meteors'  # Updated endpoint
-AMS_API = 'https://data.amsmeteors.org/api/v1/meteors'  # Using the same endpoint as it's more reliable
+METEOR_SOCIETY_API = 'https://data.amsmeteors.org/api/v1/meteors'
+AMS_API = 'https://data.amsmeteors.org/api/v1/meteors'
+NASA_IMAGE_API = 'https://images-api.nasa.gov/search'
+YOUTUBE_API = 'https://www.googleapis.com/youtube/v3/search'
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY', '')
 
 # Add a timeout for all API requests
 REQUEST_TIMEOUT = 10  # seconds
@@ -188,11 +192,27 @@ async def fetch_all_meteor_data(start_date, end_date):
     
     return all_meteors
 
+def async_route(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(f(*args, **kwargs))
+            return result
+        except Exception as e:
+            print(f"Error in async route: {str(e)}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            loop.close()
+    return wrapper
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/api/meteors')
+@async_route
 async def get_meteors():
     try:
         time_range = request.args.get('time_range', 'realtime')
@@ -233,4 +253,4 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
     # In production, don't use debug mode
     debug = os.getenv('FLASK_ENV') == 'development'
-    app.run(host='0.0.0.0', port=port, debug=debug) 
+    app.run(host='0.0.0.0', port=port, debug=debug)
