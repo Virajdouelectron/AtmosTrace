@@ -222,27 +222,59 @@ async def fetch_ams_data(start_date, end_date):
         return []
 
 async def fetch_all_meteor_data(start_date, end_date):
-    # Fetch data from all sources concurrently
-    nasa_data, meteor_society_data, ams_data = await asyncio.gather(
-        fetch_nasa_data(start_date, end_date),
-        fetch_meteor_society_data(start_date, end_date),
-        fetch_ams_data(start_date, end_date)
-    )
+    """
+    Fetch meteor data from all available sources and combine the results.
+    Includes fallback to sample data if APIs are unavailable.
+    """
+    print(f"\n=== Fetching meteor data from {start_date} to {end_date} ===")
     
-    # Process data from each source
-    all_meteors = []
-    all_meteors.extend(process_meteor_data(nasa_data, 'nasa'))
-    all_meteors.extend(process_meteor_data(meteor_society_data, 'meteor_society'))
-    all_meteors.extend(process_meteor_data(ams_data, 'ams'))
-    
-    # Sort by date
-    all_meteors.sort(key=lambda x: x['time_utc'], reverse=True)
-    
-    # Fetch media data for each meteor
-    for meteor in all_meteors:
-        meteor['media'] = await fetch_meteor_media(meteor)
-    
-    return all_meteors
+    try:
+        # Fetch data from all sources concurrently
+        nasa_data, meteor_society_data, ams_data = await asyncio.gather(
+            fetch_nasa_data(start_date, end_date),
+            fetch_meteor_society_data(start_date, end_date),
+            fetch_ams_data(start_date, end_date),
+            return_exceptions=True  # Don't fail if one source fails
+        )
+        
+        # Process the data from each source
+        all_meteors = []
+        
+        # Process NASA data
+        if isinstance(nasa_data, list):
+            print(f"Processing {len(nasa_data)} records from NASA")
+            nasa_meteors = process_meteor_data(nasa_data, 'nasa')
+            all_meteors.extend(nasa_meteors)
+        else:
+            print(f"Skipping NASA data due to error: {nasa_data}")
+            
+        # Process Meteor Society data
+        if isinstance(meteor_society_data, list):
+            print(f"Processing {len(meteor_society_data)} records from Meteor Society")
+            ms_meteors = process_meteor_data(meteor_society_data, 'meteor_society')
+            all_meteors.extend(ms_meteors)
+        else:
+            print(f"Skipping Meteor Society data due to error: {meteor_society_data}")
+            
+        # Process AMS data
+        if isinstance(ams_data, list):
+            print(f"Processing {len(ams_data)} records from AMS")
+            ams_meteors = process_meteor_data(ams_data, 'ams')
+            all_meteors.extend(ams_meteors)
+        else:
+            print(f"Skipping AMS data due to error: {ams_data}")
+        
+        # Sort by date (newest first)
+        all_meteors.sort(key=lambda x: x.get('time_utc', ''), reverse=True)
+        
+        print(f"Successfully processed {len(all_meteors)} total meteors")
+        return all_meteors
+        
+    except Exception as e:
+        print(f"Error in fetch_all_meteor_data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 def process_meteor_data(raw_data, source):
     meteors = []
